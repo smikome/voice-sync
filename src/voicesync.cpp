@@ -2,6 +2,9 @@
 
 #include <iostream>
 
+
+#define VOICE_SYNC_DOUBLE_CLICK_INTERVAL 300
+
 class App : public Gtk::Window
 {
 public:
@@ -13,22 +16,19 @@ private:
     bool OnButtonReleased(GdkEventButton *eventButton);
     bool OnMotionNotify(GdkEventMotion *eventMotion);
     void ShowExitConfirmationDialog();
+    void SetImage(const std::string &fileName);
+    bool UpdateImage();
+    void DisableDoubleClick();
 
     Gtk::EventBox mEventBox;
     Gtk::Image mImage;
-    bool mMotioned = false;
+    bool mCanDoubleClick = false;
 };
 
 App::App()
     :Gtk::Window()
 {
     set_title("voice sync test");
-    Glib::RefPtr<Gdk::Pixbuf> pixbuf = Gdk::Pixbuf::create_from_file("./res/00.png");
-    constexpr int HEIGHT = 128;
-    float scale = (float)HEIGHT / pixbuf->get_height();
-    int width = pixbuf->get_width() * scale;
-    pixbuf = pixbuf->scale_simple(width, HEIGHT, Gdk::INTERP_BILINEAR);
-    mImage.set(pixbuf);
 
     mEventBox.set_events(Gdk::EventMask::BUTTON_PRESS_MASK | Gdk::EventMask::BUTTON_RELEASE_MASK | Gdk::EventMask::BUTTON_MOTION_MASK);
     mEventBox.signal_button_press_event().connect(sigc::mem_fun(*this, &App::OnButtonPressed));
@@ -47,6 +47,10 @@ App::App()
     signal_screen_changed().connect(sigc::mem_fun(*this, &App::OnScreenChanged));
 
     OnScreenChanged(get_screen());
+
+    SetImage("./res/00.png");
+
+    Glib::signal_timeout().connect(sigc::mem_fun(*this, &App::UpdateImage), 1000 / 12);
 }
 
 int main(int argc, char *argv[])
@@ -79,25 +83,28 @@ bool App::OnDraw(const Cairo::RefPtr<Cairo::Context> &cr)
 
 bool App::OnButtonPressed(GdkEventButton *eventButton)
 {
-    mMotioned = false;
     std::cout << "OnButtonPressed" << std::endl;
     return true;
 }
 
 bool App::OnButtonReleased(GdkEventButton *eventButton)
 {
-    if(!mMotioned)
+    if(mCanDoubleClick)
     {
         ShowExitConfirmationDialog();
+        mCanDoubleClick = false;
     }
-    mMotioned = false;
+    else
+    {
+        mCanDoubleClick = true;
+        Glib::signal_timeout().connect_once(sigc::mem_fun(*this, &App::DisableDoubleClick), VOICE_SYNC_DOUBLE_CLICK_INTERVAL);
+    }
     std::cout << "OnButtonReleased" << std::endl;
     return true;
 }
 
 bool App::OnMotionNotify(GdkEventMotion *eventMotion)
 {
-    mMotioned = true;
     int width = get_width();
     int height = get_height();
     int x = eventMotion->x_root - (width / 2);
@@ -117,4 +124,44 @@ void App::ShowExitConfirmationDialog()
     {
         gtk_main_quit();
     }
+}
+
+void App::SetImage(const std::string &fileName)
+{
+    Glib::RefPtr<Gdk::Pixbuf> pixbuf = Gdk::Pixbuf::create_from_file(fileName);
+    constexpr int HEIGHT = 128;
+    float scale = (float)HEIGHT / pixbuf->get_height();
+    int width = pixbuf->get_width() * scale;
+    pixbuf = pixbuf->scale_simple(width, HEIGHT, Gdk::INTERP_BILINEAR);
+    mImage.set(pixbuf);
+    mImage.show();
+}
+
+bool App::UpdateImage()
+{
+    static int mode = 0;
+    mode++;
+    mode %= 4;
+    if(mode == 0)
+    {
+        SetImage("./res/00.png");
+    }
+    else if(mode == 1)
+    {
+        SetImage("./res/01.png");
+    }
+    else if(mode == 2)
+    {
+        SetImage("./res/02.png");
+    }
+    else
+    {
+        SetImage("./res/03.png");
+    }
+    return true;
+}
+
+void App::DisableDoubleClick()
+{
+    mCanDoubleClick = false;
 }
