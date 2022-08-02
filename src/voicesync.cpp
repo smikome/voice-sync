@@ -142,23 +142,20 @@ void App::SetImage(const std::string &fileName)
 
 bool App::UpdateImage()
 {
-    static int mode = 0;
-    mode++;
-    if(mLoudness > 2.0f)
+    static int mode = -1;
+    int previousMode = mode;
+    if(mLoudness > 1.0)
     {
+        mode++;
         mode %= 4;
-    }
-    else if(mLoudness > 1.2f)
-    {
-        mode %= 3;
-    }
-    else if(mLoudness > 0.8f)
-    {
-        mode %= 2;
     }
     else
     {
         mode = 0;
+    }
+    if(mode == previousMode)
+    {
+        return true;
     }
     if(mode == 0)
     {
