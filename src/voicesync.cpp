@@ -1,5 +1,8 @@
 #include <gtkmm.h>
 
+#define MINIAUDIO_IMPLEMENTATION
+#include <miniaudio.h>
+
 #include <iostream>
 
 
@@ -9,6 +12,10 @@ class App : public Gtk::Window
 {
 public:
     App();
+    bool StartAudioCapture();
+    void EndAudioCapture();
+    void SetLoudness(const float &value);
+
 private:
     bool OnDraw(const Cairo::RefPtr<Cairo::Context> &cr);
     void OnScreenChanged(const Glib::RefPtr<Gdk::Screen> &screen);
@@ -23,6 +30,10 @@ private:
     Gtk::EventBox mEventBox;
     Gtk::Image mImage;
     bool mCanDoubleClick = false;
+
+    ma_device mDevice;
+    bool mIsCapturing = false;
+    float mLoudness = 0.0f;
 };
 
 App::App()
@@ -51,14 +62,6 @@ App::App()
     SetImage("./res/00.png");
 
     Glib::signal_timeout().connect(sigc::mem_fun(*this, &App::UpdateImage), 1000 / 12);
-}
-
-int main(int argc, char *argv[])
-{
-    Gtk::Main kit(argc, argv);
-    App app;
-    Gtk::Main::run(app);
-    return 0;
 }
 
 gboolean supports_alpha = FALSE;
@@ -141,7 +144,22 @@ bool App::UpdateImage()
 {
     static int mode = 0;
     mode++;
-    mode %= 4;
+    if(mLoudness > 2.0f)
+    {
+        mode %= 4;
+    }
+    else if(mLoudness > 1.2f)
+    {
+        mode %= 3;
+    }
+    else if(mLoudness > 0.8f)
+    {
+        mode %= 2;
+    }
+    else
+    {
+        mode = 0;
+    }
     if(mode == 0)
     {
         SetImage("./res/00.png");
@@ -164,4 +182,85 @@ bool App::UpdateImage()
 void App::DisableDoubleClick()
 {
     mCanDoubleClick = false;
+}
+
+static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
+{
+    App *app = (App *)pDevice->pUserData;
+    MA_ASSERT(app != NULL);
+
+    int channels = 1;
+    float* pInputF32 = (float*)pInput;
+    float loudness = 0.0f;
+
+    for (int iFrame = 0; iFrame < frameCount; iFrame += 1) {
+        for (int iChannel = 0; iChannel < channels; iChannel += 1) {
+            float abs = pInputF32[iFrame * channels + iChannel];
+            if(abs < 0)
+            {
+                abs *= -1;
+            }
+            loudness += abs;
+        }
+    }
+
+    loudness = (loudness / frameCount) * 100;
+
+    std::cout << "loudness: " << loudness << std::endl;
+    app->SetLoudness(loudness);
+
+    (void)pOutput;
+}
+
+bool App::StartAudioCapture()
+{
+    ma_result result;
+    ma_device_config deviceConfig;
+
+    deviceConfig = ma_device_config_init(ma_device_type_capture);
+    deviceConfig.capture.format   = ma_format_f32;
+    deviceConfig.capture.channels = 1;
+    deviceConfig.sampleRate       = 5000;
+    deviceConfig.dataCallback     = data_callback;
+    deviceConfig.pUserData = (void *)this;
+
+    result = ma_device_init(NULL, &deviceConfig, &mDevice);
+    if (result != MA_SUCCESS) {
+        printf("Failed to initialize capture device.\n");
+        return false;
+    }
+
+    result = ma_device_start(&mDevice);
+    if (result != MA_SUCCESS) {
+        ma_device_uninit(&mDevice);
+        printf("Failed to start device.\n");
+        return false;
+    }
+
+    return true;
+}
+
+void App::EndAudioCapture()
+{
+    if(!mIsCapturing)
+    {
+        return;
+    }
+    mIsCapturing = false;
+    ma_device_uninit(&mDevice);
+}
+
+void App::SetLoudness(const float &value)
+{
+    mLoudness = value;
+}
+
+int main(int argc, char *argv[])
+{
+    Gtk::Main kit(argc, argv);
+    App app;
+    app.StartAudioCapture();
+    Gtk::Main::run(app);
+    app.EndAudioCapture();
+    return 0;
 }
