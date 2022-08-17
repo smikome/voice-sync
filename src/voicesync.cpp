@@ -25,10 +25,14 @@ private:
     void ShowExitConfirmationDialog();
     void SetImage(const std::string &fileName);
     bool UpdateImage();
+    void OnAppStarted();
     void DisableDoubleClick();
 
     Gtk::EventBox mEventBox;
     Gtk::Image mImage;
+    int mCurrentFileIndex = -1;
+    std::string mCurrentFileName;
+    std::vector<std::string> mFileArray;
     bool mCanDoubleClick = false;
 
     ma_device mDevice;
@@ -39,7 +43,7 @@ private:
 App::App()
     :Gtk::Window()
 {
-    set_title("voice sync test");
+    set_title("voice sync");
 
     mEventBox.set_events(Gdk::EventMask::BUTTON_PRESS_MASK | Gdk::EventMask::BUTTON_RELEASE_MASK | Gdk::EventMask::BUTTON_MOTION_MASK);
     mEventBox.signal_button_press_event().connect(sigc::mem_fun(*this, &App::OnButtonPressed));
@@ -59,9 +63,16 @@ App::App()
 
     OnScreenChanged(get_screen());
 
-    SetImage("./res/00.png");
+    mFileArray.push_back("./res/00.png");
+    mFileArray.push_back("./res/01.png");
+    mFileArray.push_back("./res/02.png");
+    mFileArray.push_back("./res/03.png");
+
+    SetImage(mFileArray[0]);
 
     Glib::signal_timeout().connect(sigc::mem_fun(*this, &App::UpdateImage), 1000 / 12);
+
+    Glib::signal_timeout().connect_once(sigc::mem_fun(*this, &App::OnAppStarted), 0);
 }
 
 gboolean supports_alpha = FALSE;
@@ -86,7 +97,7 @@ bool App::OnDraw(const Cairo::RefPtr<Cairo::Context> &cr)
 
 bool App::OnButtonPressed(GdkEventButton *eventButton)
 {
-    std::cout << "OnButtonPressed" << std::endl;
+    // std::cout << "OnButtonPressed" << std::endl;
     return true;
 }
 
@@ -102,7 +113,6 @@ bool App::OnButtonReleased(GdkEventButton *eventButton)
         mCanDoubleClick = true;
         Glib::signal_timeout().connect_once(sigc::mem_fun(*this, &App::DisableDoubleClick), VOICE_SYNC_DOUBLE_CLICK_INTERVAL);
     }
-    std::cout << "OnButtonReleased" << std::endl;
     return true;
 }
 
@@ -113,7 +123,6 @@ bool App::OnMotionNotify(GdkEventMotion *eventMotion)
     int x = eventMotion->x_root - (width / 2);
     int y = eventMotion->y_root - (height / 2);
     move(x, y);
-    std::cout << "OnMotionNotify: " << (int)eventMotion->x_root << ", " << (int)eventMotion->y_root << std::endl;
     return true;
 }
 
@@ -131,7 +140,12 @@ void App::ShowExitConfirmationDialog()
 
 void App::SetImage(const std::string &fileName)
 {
-    Glib::RefPtr<Gdk::Pixbuf> pixbuf = Gdk::Pixbuf::create_from_file(fileName);
+    if(mCurrentFileName.compare(fileName) == 0)
+    {
+        return;
+    }
+    mCurrentFileName = fileName;
+    Glib::RefPtr<Gdk::Pixbuf> pixbuf = Gdk::Pixbuf::create_from_file(mCurrentFileName);
     constexpr int HEIGHT = 128;
     float scale = (float)HEIGHT / pixbuf->get_height();
     int width = pixbuf->get_width() * scale;
@@ -142,43 +156,31 @@ void App::SetImage(const std::string &fileName)
 
 bool App::UpdateImage()
 {
-    static int mode = -1;
-    int previousMode = mode;
     if(mLoudness > 1.0)
     {
-        mode++;
-        mode %= 4;
+        mCurrentFileIndex++;
+        mCurrentFileIndex %= 4;
     }
     else
     {
-        mode = 0;
+        mCurrentFileIndex = 0;
     }
-    if(mode == previousMode)
+    if(mCurrentFileIndex < mFileArray.size())
     {
+        SetImage(mFileArray[mCurrentFileIndex]);
         return true;
     }
-    if(mode == 0)
-    {
-        SetImage("./res/00.png");
-    }
-    else if(mode == 1)
-    {
-        SetImage("./res/01.png");
-    }
-    else if(mode == 2)
-    {
-        SetImage("./res/02.png");
-    }
-    else
-    {
-        SetImage("./res/03.png");
-    }
-    return true;
+    return false;
 }
 
 void App::DisableDoubleClick()
 {
     mCanDoubleClick = false;
+}
+
+void App::OnAppStarted()
+{
+    set_keep_above(true);
 }
 
 static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
@@ -203,7 +205,7 @@ static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput,
 
     loudness = (loudness / frameCount) * 100;
 
-    std::cout << "loudness: " << loudness << std::endl;
+    // std::cout << "loudness: " << loudness << std::endl;
     app->SetLoudness(loudness);
 
     (void)pOutput;
